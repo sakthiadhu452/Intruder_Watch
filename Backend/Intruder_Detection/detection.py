@@ -1,3 +1,5 @@
+import time
+import csv  # Import CSV module
 from torch.cuda import is_available
 import os
 import cv2
@@ -5,41 +7,31 @@ from ultralytics import YOLO
 from supervision import LabelAnnotator, Detections, BoxCornerAnnotator, Color
 
 class PersonDetection:
-    def __init__(self,videoPath):
-        self.videoPath=videoPath
-        print("hi here commed",self.videoPath)
-        # self.capture_index = capture_index
+    def __init__(self, videoPath):
+        self.videoPath = videoPath
+        # print("hi here commed", self.videoPath)
         self.currentIntruderDetected = 0
-        # self.email_notification = email_notification
+        self.intruder_detection_times = {}  # Dictionary to track first detection times for each intruder
 
         # Load the model
         self.model = YOLO("./weights/yolov8n.pt")
 
-        # Instanciate Supervision Annotators
-        self.box_annotator = BoxCornerAnnotator(color=Color.from_hex("#ff0000"),
-                                                thickness=6,
-                                                corner_length=30)
-        self.label_annotator = LabelAnnotator(color=Color.from_hex("#ff0000"),
-                                              text_color=Color.from_hex("#fff"))
+        # Supervision Annotators
+        self.box_annotator = BoxCornerAnnotator(color=Color.from_hex("#ff0000"), thickness=6, corner_length=30)
+        self.label_annotator = LabelAnnotator(color=Color.from_hex("#ff0000"), text_color=Color.from_hex("#fff"))
 
         self.device = 'cuda:0' if is_available() else 'cpu'
 
     def predict(self, img):
-
         # Detect and track object using YOLOv8 model
         result = self.model.track(img, persist=True, device=self.device)[0]
-
-        # Convert result to Supervision Detection object
         detections = Detections.from_ultralytics(result)
-
-        # In Yolov8 model, objects with class_id 0 refer to a person. So, we should filter objects detected to only consider person
+        # Filter to only consider people (class_id == 0)
         detections = detections[detections.class_id == 0]
-
         return detections
 
-
     def plot_bboxes(self, detections: Detections, img):
-    # Check if detections is valid and has tracker_id
+        # Check if detections is valid and has tracker_id
         if detections is None or detections.tracker_id is None or len(detections.tracker_id) == 0:
             return img  # Return the original image if no detections
 
@@ -59,8 +51,6 @@ class PersonDetection:
         )
 
         return annotated_image
-
-
 
     def __call__(self):
         cap = cv2.VideoCapture(self.videoPath)
@@ -83,41 +73,67 @@ class PersonDetection:
                 if results is not None and len(results.xyxy) > 0 and results.tracker_id is not None:
                     img = self.plot_bboxes(results, img)
 
-                    if len(results.class_id) > self.currentIntruderDetected: 
-                        # New person detected, process intruders
-                        for xyxy, track_id in zip(results.xyxy, results.tracker_id):
-                            intruImg = img[int(xyxy[1]-25):int(xyxy[3]), int(xyxy[0]):int(xyxy[2])]
-                            cv2.imwrite(f"./images/intruder_{track_id}.jpg", intruImg)
+                    for xyxy, track_id in zip(results.xyxy, results.tracker_id):
+                        if track_id not in self.intruder_detection_times:
+                            # First time detecting this intruder, log time, frame, and image path
+                            detection_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                            # Save image path for CSV and web
+                            local_image_path = f"E:/Intern_Punchbiz/Intruder-Watch/Backend/uploads/intruder{track_id}.png"
+                            web_image_path = f"http://127.0.0.1:8000/uploads/intruder{track_id}.png"
+                            self.intruder_detection_times[track_id] = {
+                                'time': detection_time,
+                                'frame': frame_count,
+                                'image_path': local_image_path,
+                                'web_image_path': web_image_path  # Store the web path as well
+                            }
+                            print(f"Intruder {track_id} first detected at:", self.intruder_detection_times[track_id])
 
-                        # Notification logic (e.g., send email)
-                        # self.email_notification.send_email(len(results.class_id))
-
-                        # Cleanup old images after notification
-                        # delete_files("./images/")
-
-                        self.currentIntruderDetected = len(results.class_id)
-                else:
-                    self.currentIntruderDetected = 0  # Reset if no detection
+                        # Save the image of the intruder
+                        intruImg = img[int(xyxy[1]-25):int(xyxy[3]), int(xyxy[0]):int(xyxy[2])]
+                        cv2.imwrite(self.intruder_detection_times[track_id]['image_path'], intruImg)
 
                 cv2.imshow('Intruder Detection', img)
                 frame_count += 1
 
                 if cv2.waitKey(1) == 27:  # ESC key to break
                     break
+
         finally:
             cap.release()
             cv2.destroyAllWindows()
-            # self.email_notification.quit()
 
+        # Save detection times to CSV
+        self.save_detection_times_to_csv()
+
+    
+
+    def save_detection_times_to_csv(self):
+        # Path where the CSV file will be saved
+        csv_file_path = "E:/Intern_Punchbiz/Intruder-Watch/Backend/uploads/intruderList.csv"
+        if os.path.exists(csv_file_path):
+            os.remove(csv_file_path)
+            print(f"{csv_file_path} has been deleted.")
+        else:
+            print(f"{csv_file_path} does not exist.")
+        # Writing to CSV
+        with open(csv_file_path, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(["Tracker ID", "Time", "Frame", "Image Path"])  # Header row
+            
+            # Writing each intruder's detection time, frame number, and image web path
+            for track_id, data in self.intruder_detection_times.items():
+                writer.writerow([track_id, data['time'], data['frame'], data['web_image_path']])
+        
+        print(f"Detection times saved to {csv_file_path}")
 
 
 
 # Function to delete file
 def delete_files(path):
     files = os.listdir(path)
-
     for file in files:
-        os.remove(os.path.join(path,file))
+        os.remove(os.path.join(path, file))
+
 
 # from torch.cuda import is_available
 # import os

@@ -11,7 +11,7 @@ import { VideoProvider } from './Context/videoProvider';
 import videoProcess from './Pages/videoProcess/videoProcess';
 import { RootStackParamList } from './Pages/types';
 
-
+import WatchPage from './Pages/WatchPage/WatchPage';
 
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -66,6 +66,7 @@ const App = () => {
           )}
           <Stack.Screen name="NewProject" component={NewProject} />
           <Stack.Screen name="videoProcess" component={videoProcess} />
+          <Stack.Screen name="WatchPage" component={WatchPage} />
         </Stack.Navigator>
       </NavigationContainer>
     </VideoProvider>

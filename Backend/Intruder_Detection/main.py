@@ -51,10 +51,15 @@ def main(capture_index):
     detector = PersonDetection(capture_index=capture_index, email_notification=email_notification)
     detector()
 
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the person detection system.")
     parser.add_argument('--capture_index', type=int, default=0, help='The index or IP address of the camera to be used for capture.')
     args = parser.parse_args()
 
     main(args.capture_index)
+
+
+
 
